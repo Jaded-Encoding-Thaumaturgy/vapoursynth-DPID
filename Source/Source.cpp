@@ -8,7 +8,7 @@
 
 
 struct DpidData {
-    VSNodeRef *node1, *node2;
+    VSNode *node1, *node2;
     int dst_w, dst_h;
     float lambda[3];
     float src_left[3], src_top[3];
@@ -93,25 +93,25 @@ static void dpidProcess(const T * VS_RESTRICT srcp, int src_stride,
     }
 }
 
-static const VSFrameRef *VS_CC dpidGetframe(int n, int activationReason, void **instanceData, void **frameData, VSFrameContext *frameCtx, VSCore *core, const VSAPI *vsapi) {
-    DpidData *d = reinterpret_cast<DpidData *>(*instanceData);
+static const VSFrame *VS_CC dpidGetframe(int n, int activationReason, void *instanceData, void **frameData, VSFrameContext *frameCtx, VSCore *core, const VSAPI *vsapi) {
+    DpidData *d = reinterpret_cast<DpidData *>(instanceData);
 
     if (activationReason == arInitial) {
         vsapi->requestFrameFilter(n, d->node1, frameCtx);
         vsapi->requestFrameFilter(n, d->node2, frameCtx);
     } else if (activationReason == arAllFramesReady) {
-        const VSFrameRef *src1 = vsapi->getFrameFilter(n, d->node1, frameCtx);
-        const VSFrameRef *src2 = vsapi->getFrameFilter(n, d->node2, frameCtx);
-        const VSFormat *fi = vsapi->getFrameFormat(src2);
+        const VSFrame *src1 = vsapi->getFrameFilter(n, d->node1, frameCtx);
+        const VSFrame *src2 = vsapi->getFrameFilter(n, d->node2, frameCtx);
+        const VSVideoFormat *fi = vsapi->getVideoFrameFormat(src2);
 
-        const VSFrameRef * fr[] = {
+        const VSFrame * fr[] = {
             d->process[0] ? nullptr : src2, 
             d->process[1] ? nullptr : src2, 
             d->process[2] ? nullptr : src2};
 
         constexpr int pl[] = {0, 1, 2};
 
-        VSFrameRef *dst = vsapi->newVideoFrame2(
+        VSFrame *dst = vsapi->newVideoFrame2(
             fi, vsapi->getFrameWidth(src2, 0), vsapi->getFrameHeight(src2, 0), fr, pl, src2, core);
 
         for (int plane = 0; plane < fi->numPlanes; ++plane) {
@@ -135,7 +135,7 @@ static const VSFrameRef *VS_CC dpidGetframe(int n, int activationReason, void **
                     {
                         int err;
 
-                        chromaLocation = int64ToIntS(vsapi->propGetInt(vsapi->getFramePropsRO(src2), "_ChromaLocation", 0, &err));
+                        chromaLocation = vsh::int64ToIntS(vsapi->mapGetInt(vsapi->getFramePropertiesRO(src2), "_ChromaLocation", 0, &err));
                         if (err) {
                             chromaLocation = 0;
                         }
@@ -196,12 +196,6 @@ static const VSFrameRef *VS_CC dpidGetframe(int n, int activationReason, void **
     return nullptr;
 }
 
-static void VS_CC dpidNodeInit(VSMap *in, VSMap *out, void **instanceData, VSNode *node, VSCore *core, const VSAPI *vsapi) {
-    DpidData *d = reinterpret_cast<DpidData *>(*instanceData);
-    vsapi->setVideoInfo(vsapi->getVideoInfo(d->node2), 1, node);
-}
-
-
 static void VS_CC dpidNodeFree(void *instanceData, VSCore *core, const VSAPI *vsapi) {
     DpidData *d = reinterpret_cast<DpidData *>(instanceData);
 
@@ -214,8 +208,8 @@ static void VS_CC dpidNodeFree(void *instanceData, VSCore *core, const VSAPI *vs
 static void VS_CC dpidRawCreate(const VSMap *in, VSMap *out, void *userData, VSCore *core, const VSAPI *vsapi) {
     std::unique_ptr<DpidData> d = std::make_unique<DpidData>();
 
-    d->node1 = vsapi->propGetNode(in, "clip", 0, nullptr);
-    d->node2 = vsapi->propGetNode(in, "clip2", 0, nullptr);
+    d->node1 = vsapi->mapGetNode(in, "clip", 0, nullptr);
+    d->node2 = vsapi->mapGetNode(in, "clip2", 0, nullptr);
     const VSVideoInfo *vi = vsapi->getVideoInfo(d->node2);
     d->dst_w = vi->width;
     d->dst_h = vi->height;
@@ -223,38 +217,38 @@ static void VS_CC dpidRawCreate(const VSMap *in, VSMap *out, void *userData, VSC
     int err;
 
     try {
-        if (!isConstantFormat(vi) ||
-            (vi->format->sampleType == stInteger && vi->format->bitsPerSample > 16) ||
-            (vi->format->sampleType == stFloat && vi->format->bitsPerSample != 32))
+        if (!vsh::isConstantVideoFormat(vi) ||
+            (vi->format.sampleType == stInteger && vi->format.bitsPerSample > 16) ||
+            (vi->format.sampleType == stFloat && vi->format.bitsPerSample != 32))
             throw std::string{"only constant format 8-16 bit integer and 32 bit float input supported"};
 
 
         if (const VSVideoInfo *vi_src = vsapi->getVideoInfo(d->node1);
-            (vi->format->id != vi_src->format->id) || (vi->numFrames != vi_src->numFrames))
+            !vsh::isSameVideoFormat(&vi->format, &vi_src->format) || (vi->numFrames != vi_src->numFrames))
             throw std::string{"\"clip\" and \"clip2\" must be of the same format and number of frames"};
 
-        const int numLambda = vsapi->propNumElements(in, "lambda");
-        if (numLambda > vi->format->numPlanes)
+        const int numLambda = vsapi->mapNumElements(in, "lambda");
+        if (numLambda > vi->format.numPlanes)
             throw std::string{"more \"lambda\" given than there are planes"};
 
         for (int i = 0; i < 3; i++) {
             if (i < numLambda)
-                d->lambda[i] = static_cast<float>(vsapi->propGetFloat(in, "lambda", i, nullptr));
+                d->lambda[i] = static_cast<float>(vsapi->mapGetFloat(in, "lambda", i, nullptr));
             else if (i == 0)
                 d->lambda[0] = 1.0f;
             else 
                 d->lambda[i] = d->lambda[i-1];
         }
 
-        const int numPlanes = vsapi->propNumElements(in, "planes");
+        const int numPlanes = vsapi->mapNumElements(in, "planes");
 
         for (int i = 0; i < 3; i++)
             d->process[i] = (numPlanes <= 0);
 
         for (int i = 0; i < numPlanes; i++) {
-            const int n = int64ToIntS(vsapi->propGetInt(in, "planes", i, nullptr));
+            const int n = vsh::int64ToIntS(vsapi->mapGetInt(in, "planes", i, nullptr));
 
-            if (n < 0 || n >= vi->format->numPlanes)
+            if (n < 0 || n >= vi->format.numPlanes)
                 throw std::string{"plane index out of range"};
 
             if (d->process[n])
@@ -263,51 +257,55 @@ static void VS_CC dpidRawCreate(const VSMap *in, VSMap *out, void *userData, VSC
             d->process[n] = true;
         }
 
-        const int numSrcLeft = vsapi->propNumElements(in, "src_left");
-        if (numSrcLeft > vi->format->numPlanes)
+        const int numSrcLeft = vsapi->mapNumElements(in, "src_left");
+        if (numSrcLeft > vi->format.numPlanes)
             throw std::string{"more \"src_left\" given than there are planes"};
 
-        const int numSrcTop = vsapi->propNumElements(in, "src_top");
-        if (numSrcTop > vi->format->numPlanes)
+        const int numSrcTop = vsapi->mapNumElements(in, "src_top");
+        if (numSrcTop > vi->format.numPlanes)
             throw std::string{"more \"src_top\" given than there are planes"};
 
         for (int i = 0; i < 3; i++) {
             if (i < numSrcLeft)
-                d->src_left[i] = static_cast<float>(vsapi->propGetFloat(in, "src_left", i, nullptr));
+                d->src_left[i] = static_cast<float>(vsapi->mapGetFloat(in, "src_left", i, nullptr));
             else if (i == 0)
                 d->src_left[0] = 0.0f;
             else 
                 d->src_left[i] = d->src_left[i-1];
 
             if (i < numSrcTop)
-                d->src_top[i] = static_cast<float>(vsapi->propGetFloat(in, "src_top", i, nullptr));
+                d->src_top[i] = static_cast<float>(vsapi->mapGetFloat(in, "src_top", i, nullptr));
             else if (i == 0)
                 d->src_top[0] = 0.0f;
             else 
                 d->src_top[i] = d->src_top[i-1];
         }
 
-        d->read_chromaloc = static_cast<bool>(vsapi->propGetInt(in, "read_chromaloc", 0, &err));
+        d->read_chromaloc = static_cast<bool>(vsapi->mapGetInt(in, "read_chromaloc", 0, &err));
         if (err) {
             d->read_chromaloc = true;
         }
 
     } catch (const std::string &error) {
-        vsapi->setError(out, ("DpidRaw: " + error).c_str());
+        vsapi->mapSetError(out, ("DpidRaw: " + error).c_str());
         vsapi->freeNode(d->node1);
         vsapi->freeNode(d->node2);
         return;
     }
 
-    vsapi->createFilter(in, out, "DpidRaw", dpidNodeInit, dpidGetframe, dpidNodeFree,
-        fmParallel, nfNoCache, d.release(), core);
+    VSFilterDependency deps[] = {
+        {d->node1, rpGeneral},
+        {d->node2, rpGeneral},
+    };
+    
+    vsapi->createVideoFilter(out, "DpidRaw", vsapi->getVideoInfo(d->node2), dpidGetframe, dpidNodeFree, fmParallel, deps, 2, d.release(), core);
 }
 
 
 static void VS_CC dpidCreate(const VSMap *in, VSMap *out, void *userData, VSCore *core, const VSAPI *vsapi) {
     std::unique_ptr<DpidData> d = std::make_unique<DpidData>();
 
-    VSNodeRef *node = vsapi->propGetNode(in, "clip", 0, nullptr);
+    VSNode *node = vsapi->mapGetNode(in, "clip", 0, nullptr);
     d->node1 = node;
 
     const VSVideoInfo *vi = vsapi->getVideoInfo(node);
@@ -315,18 +313,18 @@ static void VS_CC dpidCreate(const VSMap *in, VSMap *out, void *userData, VSCore
     int err;
 
     try {
-        if (!isConstantFormat(vi) ||
-            (vi->format->sampleType == stInteger && vi->format->bitsPerSample > 16) ||
-            (vi->format->sampleType == stFloat && vi->format->bitsPerSample != 32))
+        if (!vsh::isConstantVideoFormat(vi) ||
+            (vi->format.sampleType == stInteger && vi->format.bitsPerSample > 16) ||
+            (vi->format.sampleType == stFloat && vi->format.bitsPerSample != 32))
             throw std::string{"only constant format 8-16 bit integer and 32 bit float input supported"};
 
         // read arguments
-        d->dst_w = int64ToIntS(vsapi->propGetInt(in, "width", 0, &err));
+        d->dst_w = vsh::int64ToIntS(vsapi->mapGetInt(in, "width", 0, &err));
         if (err) {
             d->dst_w = vi->width;
         }
 
-        d->dst_h = int64ToIntS(vsapi->propGetInt(in, "height", 0, &err));
+        d->dst_h = vsh::int64ToIntS(vsapi->mapGetInt(in, "height", 0, &err));
         if (err) {
             d->dst_h = vi->height;
         }
@@ -342,13 +340,13 @@ static void VS_CC dpidCreate(const VSMap *in, VSMap *out, void *userData, VSCore
             throw std::string{"dimensions of output is identical to input. "
                 "Please consider remove the function call"};
 
-        const int numLambda = vsapi->propNumElements(in, "lambda");
-        if (numLambda > vi->format->numPlanes)
+        const int numLambda = vsapi->mapNumElements(in, "lambda");
+        if (numLambda > vi->format.numPlanes)
             throw std::string{"more \"lambda\" given than there are planes"};
 
         for (int i = 0; i < 3; i++) {
             if (i < numLambda)
-                d->lambda[i] = static_cast<float>(vsapi->propGetFloat(in, "lambda", i, nullptr));
+                d->lambda[i] = static_cast<float>(vsapi->mapGetFloat(in, "lambda", i, nullptr));
             else if (i == 0)
                 d->lambda[0] = 1.0f;
             else 
@@ -358,85 +356,92 @@ static void VS_CC dpidCreate(const VSMap *in, VSMap *out, void *userData, VSCore
         for (int i = 0; i < 3; i++)
             d->process[i] = true;
 
-        const int numSrcLeft = vsapi->propNumElements(in, "src_left");
-        if (numSrcLeft > vi->format->numPlanes)
+        const int numSrcLeft = vsapi->mapNumElements(in, "src_left");
+        if (numSrcLeft > vi->format.numPlanes)
             throw std::string{"more \"src_left\" given than there are planes"};
 
-        const int numSrcTop = vsapi->propNumElements(in, "src_top");
-        if (numSrcTop > vi->format->numPlanes)
+        const int numSrcTop = vsapi->mapNumElements(in, "src_top");
+        if (numSrcTop > vi->format.numPlanes)
             throw std::string{"more \"src_top\" given than there are planes"};
 
         for (int i = 0; i < 3; i++) {
             if (i < numSrcLeft)
-                d->src_left[i] = static_cast<float>(vsapi->propGetFloat(in, "src_left", i, nullptr));
+                d->src_left[i] = static_cast<float>(vsapi->mapGetFloat(in, "src_left", i, nullptr));
             else if (i == 0)
                 d->src_left[0] = 0.0f;
             else 
                 d->src_left[i] = d->src_left[i-1];
 
             if (i < numSrcTop)
-                d->src_top[i] = static_cast<float>(vsapi->propGetFloat(in, "src_top", i, nullptr));
+                d->src_top[i] = static_cast<float>(vsapi->mapGetFloat(in, "src_top", i, nullptr));
             else if (i == 0)
                 d->src_top[0] = 0.0f;
             else 
                 d->src_top[i] = d->src_top[i-1];
         }
 
-        d->read_chromaloc = static_cast<bool>(vsapi->propGetInt(in, "read_chromaloc", 0, &err));
+        d->read_chromaloc = static_cast<bool>(vsapi->mapGetInt(in, "read_chromaloc", 0, &err));
         if (err) {
             d->read_chromaloc = true;
         }
 
         // preprocess
         VSMap * vtmp1 = vsapi->createMap();
-        vsapi->propSetNode(vtmp1, "clip", node, paReplace);
-        vsapi->propSetInt(vtmp1, "width", d->dst_w, paReplace);
-        vsapi->propSetInt(vtmp1, "height", d->dst_h, paReplace);
-        vsapi->propSetFloat(vtmp1, "src_left", d->src_left[0], paReplace);
-        vsapi->propSetFloat(vtmp1, "src_top", d->src_top[0], paReplace);
+        vsapi->mapSetNode(vtmp1, "clip", node, maReplace);
+        vsapi->mapSetInt(vtmp1, "width", d->dst_w, maReplace);
+        vsapi->mapSetInt(vtmp1, "height", d->dst_h, maReplace);
+        vsapi->mapSetFloat(vtmp1, "src_left", d->src_left[0], maReplace);
+        vsapi->mapSetFloat(vtmp1, "src_top", d->src_top[0], maReplace);
 
-        VSMap * vtmp2 = vsapi->invoke(vsapi->getPluginByNs("resize", core), "Bilinear", vtmp1);
-        if (vsapi->getError(vtmp2)) {
-            vsapi->setError(out, vsapi->getError(vtmp2));
+        VSMap * vtmp2 = vsapi->invoke(vsapi->getPluginByNamespace("resize", core), "Bilinear", vtmp1);
+        if (vsapi->mapGetError(vtmp2)) {
+            vsapi->mapSetError(out, vsapi->mapGetError(vtmp2));
             vsapi->freeMap(vtmp1);
             vsapi->freeMap(vtmp2);
             return;
         }
         vsapi->freeMap(vtmp1);
 
-        node = vsapi->propGetNode(vtmp2, "clip", 0, nullptr);
+        node = vsapi->mapGetNode(vtmp2, "clip", 0, nullptr);
 
         d->node2 = node;
-        vsapi->createFilter(vtmp2, out, "Dpid", dpidNodeInit, dpidGetframe, dpidNodeFree,
-            fmParallel, nfNoCache, d.release(), core);
+
+        VSFilterDependency deps[] = {
+            {d->node1, rpGeneral},
+            {d->node2, rpGeneral},
+        };
+        
+        vsapi->createVideoFilter(out, "DpidRaw", vsapi->getVideoInfo(d->node2), dpidGetframe, dpidNodeFree, fmParallel, deps, 2, d.release(), core);
 
         vsapi->freeMap(vtmp2);
     } catch (const std::string &error) {
-        vsapi->setError(out, ("Dpid: " + error).c_str());
+        vsapi->mapSetError(out, ("Dpid: " + error).c_str());
         vsapi->freeNode(node);
         return;
     }
 }
 
 
-VS_EXTERNAL_API(void) VapourSynthPluginInit(VSConfigPlugin configFunc, VSRegisterFunction registerFunc, VSPlugin *plugin) {
-    configFunc("com.wolframrhodium.dpid", "dpid", "Rapid, Detail-Preserving Image Downscaling", VAPOURSYNTH_API_VERSION, 1, plugin);
+VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin *plugin, const VSPLUGINAPI *vspapi) {
+    vspapi->configPlugin("com.wolframrhodium.dpid", "dpid", "Rapid, Detail-Preserving Image Downscaling", VS_MAKE_VERSION(1, 0), VAPOURSYNTH_API_VERSION, 0, plugin);
 
-    registerFunc("DpidRaw", 
-        "clip:clip;"
-        "clip2:clip;"
+    vspapi->registerFunction("DpidRaw", 
+        "clip:vnode;"
+        "clip2:vnode;"
         "lambda:float[]:opt;"
         "src_left:float[]:opt;"
         "src_top:float[]:opt;"
         "read_chromaloc:int:opt;"
-        "planes:int[]:opt;", dpidRawCreate, 0, plugin);
+        "planes:int[]:opt;", 
+        "clip:vnode;", dpidRawCreate, 0, plugin);
 
-    registerFunc("Dpid", 
-        "clip:clip;"
+    vspapi->registerFunction("Dpid", 
+        "clip:vnode;"
         "width:int:opt;"
         "height:int:opt;"
         "lambda:float[]:opt;"
         "src_left:float[]:opt;"
         "src_top:float[]:opt;"
-        "read_chromaloc:int:opt;", dpidCreate, 0, plugin);
+        "read_chromaloc:int:opt;",
+        "clip:vnode;", dpidCreate, 0, plugin);
 }
