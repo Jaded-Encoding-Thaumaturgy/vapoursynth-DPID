@@ -294,8 +294,8 @@ static void VS_CC dpidRawCreate(const VSMap *in, VSMap *out, void *userData, VSC
     }
 
     VSFilterDependency deps[] = {
-        {d->node1, rpGeneral},
-        {d->node2, rpGeneral},
+        {d->node1, rpStrictSpatial},
+        {d->node2, rpStrictSpatial},
     };
     
     vsapi->createVideoFilter(out, "DpidRaw", vsapi->getVideoInfo(d->node2), dpidGetframe, dpidNodeFree, fmParallel, deps, 2, d.release(), core);
@@ -407,8 +407,8 @@ static void VS_CC dpidCreate(const VSMap *in, VSMap *out, void *userData, VSCore
         d->node2 = node;
 
         VSFilterDependency deps[] = {
-            {d->node1, rpGeneral},
-            {d->node2, rpGeneral},
+            {d->node1, rpStrictSpatial},
+            {d->node2, rpStrictSpatial},
         };
         
         vsapi->createVideoFilter(out, "DpidRaw", vsapi->getVideoInfo(d->node2), dpidGetframe, dpidNodeFree, fmParallel, deps, 2, d.release(), core);
