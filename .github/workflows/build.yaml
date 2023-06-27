@@ -28,7 +28,7 @@ jobs:
       run: |
         git clone https://github.com/vapoursynth/vapoursynth --depth=1
         mkdir Source/vapoursynth
-        cp vapoursynth/include/*.h Source/vapoursynth
+        cp vapoursynth/include/*.h Source
 
     - name: setup MS dev commands
       uses: ilammy/msvc-dev-cmd@v1

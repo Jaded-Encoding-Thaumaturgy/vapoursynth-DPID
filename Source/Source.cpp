@@ -1,5 +1,5 @@
-#include "vapoursynth/VapourSynth.h"
-#include "vapoursynth/VSHelper.h"
+#include "VapourSynth4.h"
+#include "VSHelper4.h"
 #include <cstdint>
 #include <cmath>
 #include <string>
