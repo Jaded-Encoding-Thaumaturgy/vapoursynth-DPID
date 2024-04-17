@@ -298,7 +298,8 @@ static void VS_CC dpidRawCreate(const VSMap *in, VSMap *out, void *userData, VSC
         {d->node2, rpStrictSpatial},
     };
     
-    vsapi->createVideoFilter(out, "DpidRaw", vsapi->getVideoInfo(d->node2), dpidGetframe, dpidNodeFree, fmParallel, deps, 2, d.release(), core);
+    vsapi->createVideoFilter(out, "DpidRaw", vsapi->getVideoInfo(d->node2), dpidGetframe, dpidNodeFree, fmParallel, deps, 2, d.get(), core);
+    d.release();
 }
 
 
@@ -411,7 +412,8 @@ static void VS_CC dpidCreate(const VSMap *in, VSMap *out, void *userData, VSCore
             {d->node2, rpStrictSpatial},
         };
         
-        vsapi->createVideoFilter(out, "DpidRaw", vsapi->getVideoInfo(d->node2), dpidGetframe, dpidNodeFree, fmParallel, deps, 2, d.release(), core);
+        vsapi->createVideoFilter(out, "DpidRaw", vsapi->getVideoInfo(d->node2), dpidGetframe, dpidNodeFree, fmParallel, deps, 2, d.get(), core);
+        d.release();
 
         vsapi->freeMap(vtmp2);
     } catch (const std::string &error) {
