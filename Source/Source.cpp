@@ -298,30 +298,27 @@ static void VS_CC dpidRawCreate(const VSMap *in, VSMap *out, void *userData, VSC
             else 
                 d->src_top[i] = d->src_top[i-1];
 
-            if (i < numSrcWidth)
-            {
+            if (i < numSrcWidth) {
                 d->src_width[i] = static_cast<float>(vsapi->mapGetFloat(in, "src_width", i, nullptr));
                 if (d->src_width[i] < 0.0f)
                     throw std::string{"active window set by \"src_width\" must be positive"};
-            }
-            else if (i == 0)
+            } else if (i == 0)
                 d->src_width[0] = 0.0f;
             else
                 d->src_width[i] = d->src_width[i - 1];
 
-            if (i < numSrcHeight)
-            {
+            if (i < numSrcHeight) {
                 d->src_height[i] = static_cast<float>(vsapi->mapGetFloat(in, "src_height", i, nullptr));
                 if (d->src_height[i] < 0.0f)
                     throw std::string{"active window set by \"src_height\" must be positive"};
-            }
-            else if (i == 0)
+            } else if (i == 0)
                 d->src_height[0] = 0.0f;
             else
                 d->src_height[i] = d->src_height[i - 1];
         }
 
         d->read_chromaloc = static_cast<bool>(vsapi->mapGetInt(in, "read_chromaloc", 0, &err));
+
         if (err) {
             d->read_chromaloc = true;
         }
@@ -428,24 +425,20 @@ static void VS_CC dpidCreate(const VSMap *in, VSMap *out, void *userData, VSCore
             else 
                 d->src_top[i] = d->src_top[i-1];
 
-            if (i < numSrcWidth)
-            {
+            if (i < numSrcWidth) {
                 d->src_width[i] = static_cast<float>(vsapi->mapGetFloat(in, "src_width", i, nullptr));
                 if (d->src_width[i] < 0.0f)
                     throw std::string{"active window set by \"src_width\" must be positive"};
-            }
-            else if (i == 0)
+            } else if (i == 0)
                 d->src_width[0] = 0.0f;
             else
                 d->src_width[i] = d->src_width[i - 1];
 
-            if (i < numSrcHeight)
-            {
+            if (i < numSrcHeight) {
                 d->src_height[i] = static_cast<float>(vsapi->mapGetFloat(in, "src_height", i, nullptr));
                 if (d->src_height[i] < 0.0f)
                     throw std::string{"active window set by \"src_height\" must be positive"};
-            }
-            else if (i == 0)
+            } else if (i == 0)
                 d->src_height[0] = 0.0f;
             else
                 d->src_height[i] = d->src_height[i - 1];
